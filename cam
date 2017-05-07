@@ -1,0 +1,100 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+sub usage;
+sub fatal;
+
+my $root = glob('~/photos/cameras');
+fatal 'no root: ~/photos/cameras' if !defined $root || !-d $root;
+chdir $root or fatal "chdir $root: $!";
+
+my $have_mounts;
+my %camera;
+foreach (glob('*')) {
+    my $mp = "$root/$_/mount";
+    (my $camera = $_) =~ s{.+/}{};
+    $mp = readlink($mp) if -l $mp;
+    $camera{$camera} = {
+        'name' => $camera,
+        'mountpoint' => $mp,
+        'mounted' => 0,
+    };
+}
+
+if (@ARGV) {
+    my $camera = shift @ARGV;
+    chdir $camera or fatal "chdir $camera: $!";
+    @ARGV = qw(access) if !@ARGV;
+    my $cmd = shift @ARGV;
+    my $proc = executable_in_bin($cmd) || __PACKAGE__->can('cmd_'.$cmd)
+        or usage;
+    $proc->($camera);
+}
+else {
+    read_mountpoints();
+    foreach my $c (sort keys %camera) {
+        show_status($camera{$c});
+    }
+}
+
+# --- Camera command handlers
+
+sub cmd_access {
+    my ($c) = @_;
+    read_mountpoints();
+    my $camera = $camera{$c} or fatal "no such camera: $c";
+    my $mp = $camera->{'mountpoint'};
+    if ($camera->{'mounted'}) {
+        1;
+    }
+    elsif (-x 'bin/mount') {
+        system('bin/mount', $mp) == 0 or fatal "bin/mount: $!";
+        $camera->{'mounted'} = 1;
+    }
+    else {
+        system('mount', $mp) == 0 or fatal "mount: $!";
+        $camera->{'mounted'} = 1;
+    }
+    show_status($camera);
+}
+
+# --- Other functions
+
+sub executable_in_bin {
+    # Return camera's bin/$cmd if executable
+    my ($cmd) = @_;
+    return sub {
+        system("bin/$cmd", @ARGV) == 0
+            or fatal "bin/$cmd: $!";
+    } if -x "bin/$cmd";
+}
+
+sub show_status {
+    my ($camera) = @_;
+    my $mountpoint = $camera->{'mountpoint'};
+    my $c = $camera->{'name'};
+    if ($camera->{'mounted'}) {
+        my @files = grep { -f $_ } glob("$root/$c/source/*.[Jj][Pp][Gg]");
+        printf "%4d %s\n", scalar(@files), $c;
+    }
+    else {
+        printf "%4s %s\n", '-', $c;
+    }
+}
+
+sub read_mountpoints {
+    if (!$have_mounts) {
+        my %m2c = map { $_->{'mountpoint'} => $_ } values %camera;
+        open my $fh, '<', '/proc/mounts' or fatal "open /proc/mounts: $!";
+        while (<$fh>) {
+            my ($dev, $dir, @etc) = split / /;
+            my $camera = $m2c{$dir}
+                or next;
+            $camera->{'mounted'} = 1;
+        }
+        $have_mounts = 1;
+    }
+}
+
