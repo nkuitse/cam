@@ -127,3 +127,8 @@ sub read_config {
         fatal "unrecognized config setting at line $. of $f: $_";
     }
 }
+
+sub fatal {
+    print STDERR "cam: @_\n";
+    exit 2;
+}
