@@ -3,6 +3,8 @@
 use strict;
 use warnings;
 
+use Cwd qw(realpath);
+
 sub usage;
 sub fatal;
 
@@ -86,7 +88,7 @@ sub show_status {
 
 sub read_mountpoints {
     if (!$have_mounts) {
-        my %m2c = map { $_->{'mountpoint'} => $_ } values %camera;
+        my %m2c = map { realpath($_->{'mountpoint'}) => $_ } values %camera;
         open my $fh, '<', '/proc/mounts' or fatal "open /proc/mounts: $!";
         while (<$fh>) {
             my ($dev, $dir, @etc) = split / /;
