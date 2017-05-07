@@ -4,12 +4,29 @@ use strict;
 use warnings;
 
 use Cwd qw(realpath);
+use Getopt::Long
+    qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
 
 sub usage;
 sub fatal;
 
-my $root = glob('~/photos/cameras');
-fatal 'no root: ~/photos/cameras' if !defined $root || !-d $root;
+my ($config_file, %config);
+GetOptions(
+    'c|config-file=s' => \$config_file,
+    'r|root=s' => \$config{'root'},
+) or usage;
+
+if (!defined $config_file) {
+    my @cf = grep { -e $_ } ( glob('~/etc/camrc'), glob('~/.config/cam.conf'), glob('~/.camrc') );
+    $config_file = shift @cf if @cf;
+}
+read_config($config_file)
+    if defined $config_file;
+
+my $root = $config{'root'} ||= glob('~/cameras');
+
+fatal 'no root (default: ~/cameras)' if !defined $root;
+fatal "root doesn't exist: $root" if !-d $root;
 chdir $root or fatal "chdir $root: $!";
 
 my $have_mounts;
@@ -100,3 +117,13 @@ sub read_mountpoints {
     }
 }
 
+sub read_config {
+    my ($f) = @_;
+    open my $fh, '<', $f or fatal "open $f: $!";
+    while (<$fh>) {
+        next if /^\s*(?:#.*)?$/;  # Skip blank lines and comments
+        $config{$1} = $2, next if /^\s*(\S+)\s+(.*)$/;
+        chomp;
+        fatal "unrecognized config setting at line $. of $f: $_";
+    }
+}
